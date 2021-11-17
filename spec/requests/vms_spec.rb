@@ -1046,7 +1046,7 @@ describe "Vms API" do
 
       post(vm_url, :params => gen_request(:set_owner, "owner" => "bad_user"))
 
-      expect_single_action_result(:success => false, :message => /.*/, :href => api_vm_url(nil, vm))
+      expect_bad_request(/Invalid user/)
     end
 
     it "set_owner to a vm" do
@@ -1054,7 +1054,7 @@ describe "Vms API" do
 
       post(vm_url, :params => gen_request(:set_owner, "owner" => @user.userid))
 
-      expect_single_action_result(:success => true, :message => "setting owner", :href => api_vm_url(nil, vm))
+      expect_single_action_result(:success => true, :message => /Setting owner/i, :href => api_vm_url(nil, vm))
       expect(vm.reload.evm_owner).to eq(@user)
     end
 
@@ -1063,7 +1063,7 @@ describe "Vms API" do
 
       post(api_vms_url, :params => gen_request(:set_owner, {"owner" => @user.userid}, vm1_url, vm2_url))
 
-      expect_multiple_action_result(2)
+      expect_multiple_action_result(2, :success => true, :message => /Setting owner/i)
       expect_result_resources_to_include_hrefs("results", [api_vm_url(nil, vm1), api_vm_url(nil, vm2)])
       expect(vm1.reload.evm_owner).to eq(@user)
       expect(vm2.reload.evm_owner).to eq(@user)
@@ -1218,7 +1218,7 @@ describe "Vms API" do
 
       post(vm_url, :params => gen_request(:add_lifecycle_event, events[0]))
 
-      expect_single_action_result(:success => true, :message => /adding lifecycle event/i, :href => api_vm_url(nil, vm))
+      expect_single_action_result(:success => true, :message => /adding life cycle event/i, :href => api_vm_url(nil, vm))
       expect(vm.lifecycle_events.size).to eq(1)
       expect(vm.lifecycle_events.first.event).to eq(events[0][:event])
     end
@@ -1229,7 +1229,7 @@ describe "Vms API" do
       post(api_vms_url, :params => gen_request(:add_lifecycle_event,
                                                events.collect { |e| {:href => vm_url}.merge(e) }))
 
-      expect_multiple_action_result(3)
+      expect_multiple_action_result(3, :success => true)
       expect(vm.lifecycle_events.size).to eq(events.size)
       expect(vm.lifecycle_events.collect(&:event)).to match_array(events.collect { |e| e[:event] })
     end
@@ -1307,22 +1307,8 @@ describe "Vms API" do
         )
       )
 
-      expected = {
-        "results" => a_collection_containing_exactly(
-          {
-            "message" => a_string_matching(/adding event .*etype1/i),
-            "success" => true,
-            "href"    => api_vm_url(nil, vm1)
-          },
-          {
-            "message" => a_string_matching(/adding event .*etype2/i),
-            "success" => true,
-            "href"    => api_vm_url(nil, vm2)
-          }
-        )
-      }
-      expect(response.parsed_body).to include(expected)
-      expect(response).to have_http_status(:ok)
+      expect_multiple_action_result(2, :success => true, :message => /Adding Event/i)
+      expect_result_resources_to_include_hrefs("results", [api_vm_url(nil, vm1), api_vm_url(nil, vm2)])
     end
   end
 

@@ -100,16 +100,24 @@ module Api
       def custom_action_resource(type, id, data = nil)
         action = @req.action.downcase
         id ||= @req.collection_id
-        if id.blank?
-          raise BadRequestError, "Must specify an id for invoking the custom action #{action} on a #{type} resource"
-        end
+        # NOTE: a lot of the rescues are going into api_action
+        api_action(type, resource.id) do
+          if id.blank?
+            raise BadRequestError, "Must specify an id for invoking the custom action #{action} on a #{type} resource"
+          end
 
-        api_log_info("Invoking #{action} on #{type} id #{id}")
-        resource = resource_search(id, type)
-        unless resource_custom_action_names(resource).include?(action)
-          raise BadRequestError, "Unsupported Custom Action #{action} for the #{type} resource specified"
+          api_log_info("Invoking #{action} on #{type} id #{id}")
+          resource = resource_search(id, type)
+          unless resource_custom_action_names(resource).include?(action)
+            raise BadRequestError, "Unsupported Custom Action #{action} for the #{type} resource specified"
+          end
+          invoke_custom_action(type, resource, action, data)
+        rescue BadRequestError => err
+          raise if single_resource?
+          action_result(false, err.to_s)
+        rescue => err
+          action_result(false, err.to_s)
         end
-        invoke_custom_action(type, resource, action, data)
       end
 
       def set_ownership_resource(type, id, data = nil)
@@ -190,27 +198,19 @@ module Api
       def invoke_custom_action(type, resource, action, data)
         custom_button = resource_custom_action_button(resource, action)
         if custom_button.resource_action.dialog_id
-          return invoke_custom_action_with_dialog(type, resource, action, data, custom_button)
-        end
-
-        api_action(type, resource.id) do
+          invoke_custom_action_with_dialog(type, resource, action, data, custom_button)
+        else
           custom_button.invoke(resource)
           action_result(true, "Invoked custom action #{action} for #{type} id: #{resource.id}")
-        rescue => err
-          action_result(false, err.to_s)
         end
       end
 
       def invoke_custom_action_with_dialog(type, resource, action, data, custom_button)
-        api_action(type, resource.id) do
           custom_button.publish_event(nil, resource)
           wf_result = submit_custom_action_dialog(resource, custom_button, data)
           action_result(true,
                         "Invoked custom dialog action #{action} for #{type} id: #{resource.id}",
                         :result => wf_result[:request], :task_id => wf_result[:task_id])
-        rescue => err
-          action_result(false, err.to_s)
-        end
       end
 
       def submit_custom_action_dialog(resource, custom_button, data)
@@ -238,7 +238,9 @@ module Api
       end
 
       def model_ident(model, type = nil)
-        if model.respond_to?(:name)
+        if model.kind_of?(Integer)
+          "#{type.to_s.singularize.titleize} id: #{model}"
+        elsif model.respond_to?(:name)
           "#{type.to_s.singularize.titleize} id: #{model.id} name: '#{model.name}'"
         else
           "#{type.to_s.singularize.titleize} id: #{model.id}"

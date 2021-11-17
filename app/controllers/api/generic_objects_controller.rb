@@ -30,13 +30,8 @@ module Api
     def invoke_custom_action(type, resource, action, data)
       return super(type, resource.reload, action, data) if resource_custom_action_button(resource, action)
 
-      api_action(type, resource.id) do
-        description = method_description(resource, action)
-        task_id = queue_object_action(resource, description, queue_args(action, data))
-        action_result(true, description, :task_id => task_id)
-      rescue => err
-        action_result(false, err.to_s)
-      end
+      description = method_description(resource, action)
+      {:task_id => queue_object_action(resource, description, queue_args(action, data))}
     end
 
     def method_description(resource, action)

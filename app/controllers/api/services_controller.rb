@@ -25,49 +25,39 @@ module Api
     end
 
     def add_resource_resource(type, id, data)
-      raise "Must specify a service href or id to add_resource to" unless id
-      svc = resource_search(id, type)
+      api_resource(type, id, "Assigning resource to") do |svc|
+        resource_type, resource = validate_resource(data)
+        raise BadRequestError, "Cannot assign #{resource_type} to #{service_ident(svc)}" unless resource.respond_to? :add_to_service
 
-      resource_type, resource = validate_resource(data)
-      raise "Cannot assign #{resource_type} to #{service_ident(svc)}" unless resource.respond_to? :add_to_service
-
-      resource.add_to_service(svc)
-      action_result(true, "Assigned resource #{resource_type} id:#{resource.id} to #{service_ident(svc)}")
-    rescue => err
-      action_result(false, err.to_s)
+        resource.add_to_service(svc)
+        action_result(true, "Assigning #{model_ident(resource, resource_type)} to #{service_ident(svc)}")
+      end
     end
 
     def remove_resource_resource(type, id, data)
-      raise 'Must specify a resource to remove_resource from' unless id
-      svc = resource_search(id, type)
+      api_resource(type, id, "Removing Resource from") do |svc|
+        resource_type, resource = validate_resource(data)
 
-      resource_type, resource = validate_resource(data)
-
-      svc.remove_resource(resource)
-      action_result(true, "Unassigned resource #{resource_type} id:#{resource.id} from #{service_ident(svc)}")
-    rescue => err
-      action_result(false, err.to_s)
+        svc.remove_resource(resource)
+        action_result(true, "Removing resource #{model_ident(resource, resource_type)} from #{service_ident(svc)}")
+      end
     end
 
     def remove_all_resources_resource(type, id, _data)
-      raise "Must specify a service href or id to remove resources from" unless id
-      svc = resource_search(id, type)
-      svc.remove_all_resources
-      action_result(true, "Removed all resources from #{service_ident(svc)}")
-    rescue => err
-      action_result(false, err.to_s)
+      api_resource(type, id, "Removed all resources from") do |svc|
+        svc.remove_all_resources
+      end
     end
 
     def reconfigure_resource(type, id = nil, data = nil)
-      raise BadRequestError, "Must specify an id for Reconfiguring a #{type} resource" unless id
+      api_resource(type, id, "Reconfiguring") do |svc|
+        # TODO: svc.supports?(:reconfigure)
+        unless svc.validate_reconfigure
+          raise BadRequest, "Reconfiguring is not available for #{service_ident(svc)}")
+        end
 
-      api_action(type, id) do |klass|
-        svc = resource_search(id, type, klass)
-        api_log_info("Reconfiguring #{service_ident(svc)}")
-
-        result = validate_service_for_action(svc, "reconfigure")
-        result = invoke_reconfigure_dialog(type, svc, data) if result[:success]
-        result
+        wf_result = submit_reconfigure_dialog(svc, data)
+        {:result => wf_result[:request]}
       end
     end
 
@@ -84,24 +74,19 @@ module Api
     end
 
     def add_provider_vms_resource(type, id, data)
-      service = resource_search(id, type)
+      api_resource(type, id, "Adding provider vms for") do |service|
+        provider_id = parse_id(data['provider'], :providers)
+        raise BadRequest, 'Must specify a valid provider href or id' unless provider_id
+        provider = resource_search(provider_id, :providers)
 
-      provider_id = parse_id(data['provider'], :providers)
-      raise 'Must specify a valid provider href or id' unless provider_id
-      provider = resource_search(provider_id, :providers)
-
-      task_id = service.add_provider_vms(provider, data['uid_ems']).miq_task_id
-      action_result(true, "Adding provider vms for #{service_ident(service)}", :task_id => task_id)
-    rescue => err
-      action_result(false, err.to_s)
+        {:task_id => service.add_provider_vms(provider, data['uid_ems']).miq_task_id}
+      end
     end
 
     def queue_chargeback_report_resource(type, id, _data)
-      service = resource_search(id, type)
-      task = service.queue_chargeback_report_generation(:userid => current_user.userid)
-      action_result(true, "Queued chargeback report generation for #{service_ident(service)}", :task_id => task.id)
-    rescue StandardError => err
-      action_result(false, "Could not queue chargeback report generation - #{err}")
+      api_resource(type, id, "Queued chargeback report generation for") do |service|
+        {:task_id => service.queue_chargeback_report_generation(:userid => User.current_userid).id}
+      end
     end
 
     private
@@ -172,16 +157,7 @@ module Api
     end
 
     def service_ident(svc)
-      "Service id:#{svc.id} name:'#{svc.name}'"
-    end
-
-    def invoke_reconfigure_dialog(type, svc, data = {})
-      api_action(type, svc.id) do
-        wf_result = submit_reconfigure_dialog(svc, data)
-        action_result(true, "#{service_ident(svc)} reconfiguring", :result => wf_result[:request])
-      rescue => err
-        action_result(false, err.to_s)
-      end
+      "Service id: #{svc.id} name:'#{svc.name}'"
     end
 
     def submit_reconfigure_dialog(svc, data)
@@ -191,12 +167,6 @@ module Api
       wf_result = wf.submit_request
       raise StandardError, Array(wf_result[:errors]).join(", ") if wf_result[:errors].present?
       wf_result
-    end
-
-    def validate_service_for_action(svc, action)
-      valid = svc.send("validate_#{action}")
-      msg = valid ? "" : "Action #{action} is not available for #{service_ident(svc)}"
-      action_result(valid, msg)
     end
   end
 end

@@ -55,27 +55,22 @@ module Api
     end
 
     def set_owner_resource(type, id = nil, data = nil)
-      raise BadRequestError, "Must specify an id for setting the owner of a #{type} resource" unless id
+      api_resource(type, id, "Setting owner of") do |vm|
+        owner = data.blank? ? "" : data["owner"].strip
+        raise BadRequestError, "Must specify an owner" if owner.blank?
+        user = User.lookup_by_identity(owner)
+        raise BadRequestError, "Invalid user #{owner} specified" unless user
 
-      owner = data.blank? ? "" : data["owner"].strip
-      raise BadRequestError, "Must specify an owner" if owner.blank?
-
-      api_action(type, id) do |klass|
-        vm = resource_search(id, type, klass)
-        api_log_info("Setting owner of #{vm_ident(vm)}")
-
-        set_owner_vm(vm, owner)
+        vm.update!(:evm_owner => user, :miq_group => user.current_group)
+        {}
       end
     end
 
     def add_lifecycle_event_resource(type, id = nil, data = nil)
-      raise BadRequestError, "Must specify an id for adding a Lifecycle Event to a #{type} resource" unless id
-
-      api_action(type, id) do |klass|
-        vm = resource_search(id, type, klass)
-        api_log_info("Adding Lifecycle Event to #{vm_ident(vm)}")
-
-        add_lifecycle_event_vm(vm, lifecycle_event_from_data(data))
+      lifecycle_event = lifecycle_event_from_data(data)
+      api_resource(type, id, "Adding Life Cycle Event #{lifecycle_event['event']} to") do |vm|
+        LifecycleEvent.create_event(vm, lifecycle_event)
+        {}
       end
     end
 
@@ -88,11 +83,11 @@ module Api
 
       data ||= {}
 
-      api_action(type, id) do |klass|
-        vm = resource_search(id, type, klass)
-        api_log_info("Adding Event to #{vm_ident(vm)}")
+      api_resource(type, id, "Adding Event to") do |vm|
+        event_timestamp = data["event_time"].blank? ? Time.now.utc : data["event_time"].to_s.to_time(:utc)
 
-        vm_event(vm, data["event_type"].to_s, data["event_message"].to_s, data["event_time"].to_s)
+        vm.add_ems_event(data["event_type"].to_s, data["event_message"].to_s, event_timestamp)
+        {}
       end
     end
 
@@ -154,20 +149,19 @@ module Api
     end
 
     def set_miq_server_resource(type, id, data)
-      vm = resource_search(id, type)
+      if data['miq_server'].empty?
+        api_resource(id, type, "Removing MiqServer") do |vm|
+          vm.miq_server = nil
+        end
+      else
+        api_resource(id, type, "Setting MiqServer") do |vm|
+          miq_server_id = parse_id(data['miq_server'], :servers)
+          raise BadRequest, 'Must specify a valid miq_server href or id' unless miq_server_id
 
-      miq_server = if data['miq_server'].empty?
-                     nil
-                   else
-                     miq_server_id = parse_id(data['miq_server'], :servers)
-                     raise 'Must specify a valid miq_server href or id' unless miq_server_id
-                     resource_search(miq_server_id, :servers)
-                   end
-
-      vm.miq_server = miq_server
-      action_result(true, "#{miq_server_message(miq_server)} for #{vm_ident(vm)}")
-    rescue => err
-      action_result(false, "Failed to set miq_server - #{err}")
+          miq_server = resource_search(miq_server_id, :servers)
+          vm.miq_server = miq_server
+        end
+      end
     end
 
     def request_retire_resource(type, id = nil, data = nil)
@@ -210,26 +204,6 @@ module Api
 
     def validate_vm_for_action(vm, action)
       action_result(vm.supports?(action), vm.unsupported_reason(action.to_sym))
-    end
-
-    def validate_vm_for_remote_console(vm, protocol = nil)
-      protocol ||= "mks"
-      vm.validate_remote_console_acquire_ticket(protocol)
-      action_result(true, "")
-    rescue MiqException::RemoteConsoleNotSupportedError => err
-      action_result(false, err.message)
-    end
-
-    def set_owner_vm(vm, owner)
-      desc = "#{vm_ident(vm)} setting owner to '#{owner}'"
-      user = User.lookup_by_identity(owner)
-      raise "Invalid user #{owner} specified" unless user
-      vm.evm_owner = user
-      vm.miq_group = user.current_group unless user.nil?
-      vm.save!
-      action_result(true, desc)
-    rescue => err
-      action_result(false, err.to_s)
     end
 
     def add_lifecycle_event_vm(vm, lifecycle_event)
