@@ -24,6 +24,14 @@ describe "Cloud Volumes API" do
       expect(response).to have_http_status(:forbidden)
     end
 
+    it "queries all volumes with an appropriate role" do
+      api_basic_authorize  action_identifier(:cloud_volumes, :read, :collection_actions, :get)
+
+      get(api_cloud_volumes_url)
+
+      expect(response).to have_http_status(:ok)
+    end
+
     it "forbids access to a cloud volume resource without an appropriate role" do
       api_basic_authorize
 
@@ -46,6 +54,66 @@ describe "Cloud Volumes API" do
         "href" => api_cloud_volume_url(nil, cloud_volume),
         "id"   => cloud_volume.id.to_s
       )
+    end
+  end
+
+  describe "Cloud Volume edit" do
+    before { stub_supports(cloud_volume.class, :update) }
+    it "rejects requests for resources without support" do
+      stub_supports_not(cloud_volume.class, :update, "No Dice")
+      api_basic_authorize collection_action_identifier(:cloud_volumes, :edit)
+
+      post(api_cloud_volume_url(nil, cloud_volume), :params => gen_request(:edit, "name" => "updated cloud_volume1"))
+
+      expect_single_action_result(:success => false, :message => /No Dice/)
+    end
+
+    it "supports edits of single resource" do
+      api_basic_authorize collection_action_identifier(:cloud_volumes, :edit)
+
+      post(api_cloud_volume_url(nil, cloud_volume), :params => gen_request(:edit, "name" => "updated cloud_volume1"))
+
+      expect_single_action_result(:success => true, :message => /Updating/, :task => true)
+    end
+
+    it "supports edits of single resource via PUT" do
+      api_basic_authorize collection_action_identifier(:cloud_volumes, :edit)
+      stub_supports(cloud_volume.class, :update)
+
+      put(api_cloud_volume_url(nil, cloud_volume), :params => { "name" => "updated cloud_volume1" })
+
+      expect_single_action_result(:success => true, :message => /Updating/, :task => true)
+    end
+
+    it "supports edits of single resource via PATCH" do
+      api_basic_authorize collection_action_identifier(:cloud_volumes, :edit)
+
+      patch(api_cloud_volume_url(nil, cloud_volume), :params => [{"action" => "edit",   "path" => "name", "value" => "updated cloud_volume1"},
+                                                   {"action" => "remove", "path" => "description"},
+                                                   {"action" => "add",    "path" => "bootable", "value" => true}])
+
+      expect_single_action_result(:success => true, :message => /Updating/, :task => true)
+    end
+
+    it "supports edits of single resource via a standard PATCH" do
+      api_basic_authorize collection_action_identifier(:cloud_volumes, :edit)
+
+      updated_service_attributes = { "name" => "updated cloud_volume1", "description" => nil, "bootable" => true }
+
+      patch(api_cloud_volume_url(nil, cloud_volume), :params => updated_service_attributes)
+
+      expect_single_action_result(:success => true, :message => /Updating/, :task => true)
+    end
+
+    it "supports edits of multiple resources" do
+      api_basic_authorize collection_action_identifier(:cloud_volumes, :edit)
+
+      cv1, cv2 = FactoryBot.create_list(:cloud_volume, 2, :ext_management_system => ems)
+      post(api_cloud_volumes_url, :params => gen_request(:edit,
+                                                    [{"href" => api_cloud_volume_url(nil, cv1), "name" => "updated cloud_volume1"},
+                                                     {"href" => api_cloud_volume_url(nil, cv2), "name" => "updated cloud_volume2"}]))
+
+      expect_multiple_action_result(2, :success => true, :message => /Updating/, :task => true)
     end
   end
 
