@@ -11,122 +11,132 @@
 describe "Cloud Volumes API" do
   include Spec::Support::SupportsHelper
 
-  it "forbids access to cloud volumes without an appropriate role" do
-    api_basic_authorize
+  let(:zone) { FactoryBot.create(:zone, :name => "api_zone") }
+  let(:ems) { FactoryBot.create(:ems_amazon, :zone => zone) }
+  let(:cloud_volume) { FactoryBot.create(:cloud_volume, :ext_management_system => ems) }
 
-    get(api_cloud_volumes_url)
+  describe 'show' do
+    it "forbids access to cloud volumes without an appropriate role" do
+      api_basic_authorize
 
-    expect(response).to have_http_status(:forbidden)
-  end
+      get(api_cloud_volumes_url)
 
-  it "forbids access to a cloud volume resource without an appropriate role" do
-    api_basic_authorize
+      expect(response).to have_http_status(:forbidden)
+    end
 
-    cloud_volume = FactoryBot.create(:cloud_volume)
+    it "forbids access to a cloud volume resource without an appropriate role" do
+      api_basic_authorize
 
-    get(api_cloud_volume_url(nil, cloud_volume))
+      cloud_volume = FactoryBot.create(:cloud_volume)
 
-    expect(response).to have_http_status(:forbidden)
-  end
+      get(api_cloud_volume_url(nil, cloud_volume))
 
-  it "allows GETs of a cloud volume" do
-    api_basic_authorize action_identifier(:cloud_volumes, :read, :resource_actions, :get)
+      expect(response).to have_http_status(:forbidden)
+    end
 
-    cloud_volume = FactoryBot.create(:cloud_volume)
+    it "allows GETs of a cloud volume" do
+      api_basic_authorize action_identifier(:cloud_volumes, :read, :resource_actions, :get)
 
-    get(api_cloud_volume_url(nil, cloud_volume))
+      cloud_volume = FactoryBot.create(:cloud_volume)
 
-    expect(response).to have_http_status(:ok)
-    expect(response.parsed_body).to include(
-      "href" => api_cloud_volume_url(nil, cloud_volume),
-      "id"   => cloud_volume.id.to_s
-    )
-  end
+      get(api_cloud_volume_url(nil, cloud_volume))
 
-  it "rejects delete request without appropriate role" do
-    api_basic_authorize
-
-    post(api_cloud_volumes_url, :params => { :action => 'delete' })
-
-    expect(response).to have_http_status(:forbidden)
-  end
-
-  it "can delete a single cloud volume" do
-    zone = FactoryBot.create(:zone, :name => "api_zone")
-    aws = FactoryBot.create(:ems_amazon, :zone => zone)
-
-    cloud_volume1 = FactoryBot.create(:cloud_volume, :ext_management_system => aws, :name => "CloudVolume1")
-
-    api_basic_authorize action_identifier(:cloud_volumes, :delete, :resource_actions, :post)
-
-    post(api_cloud_volume_url(nil, cloud_volume1), :params => { :action => "delete" })
-
-    expect_single_action_result(:success => true, :task => true, :message => /Deleting Cloud Volume/)
-  end
-
-  it "can delete a cloud volume with DELETE as a resource action" do
-    zone = FactoryBot.create(:zone, :name => "api_zone")
-    aws = FactoryBot.create(:ems_amazon, :zone => zone)
-
-    cloud_volume1 = FactoryBot.create(:cloud_volume, :ext_management_system => aws, :name => "CloudVolume1")
-
-    api_basic_authorize action_identifier(:cloud_volumes, :delete, :resource_actions, :delete)
-
-    delete api_cloud_volume_url(nil, cloud_volume1)
-
-    expect(response).to have_http_status(:no_content)
-  end
-
-  it "rejects delete request with DELETE as a resource action without appropriate role" do
-    cloud_volume = FactoryBot.create(:cloud_volume)
-
-    api_basic_authorize
-
-    delete api_cloud_volume_url(nil, cloud_volume)
-
-    expect(response).to have_http_status(:forbidden)
-  end
-
-  it 'DELETE will raise an error if the cloud volume does not exist' do
-    api_basic_authorize action_identifier(:cloud_volumes, :delete, :resource_actions, :delete)
-
-    delete(api_cloud_volume_url(nil, 999_999))
-
-    expect(response).to have_http_status(:not_found)
-  end
-
-  it 'can delete cloud volumes through POST' do
-    zone = FactoryBot.create(:zone, :name => "api_zone")
-    aws = FactoryBot.create(:ems_amazon, :zone => zone)
-
-    cloud_volume1 = FactoryBot.create(:cloud_volume, :ext_management_system => aws, :name => "CloudVolume1")
-    cloud_volume2 = FactoryBot.create(:cloud_volume, :ext_management_system => aws, :name => "CloudVolume2")
-
-    api_basic_authorize collection_action_identifier(:cloud_volumes, :delete, :post)
-
-    post(api_cloud_volumes_url, :params => { :action => 'delete', :resources => [{ 'id' => cloud_volume1.id }, { 'id' => cloud_volume2.id }] })
-    expect_multiple_action_result(2, :task => true, :message => /Deleting Cloud Volume/)
-  end
-
-  it 'it can create cloud volumes through POST' do
-    zone = FactoryBot.create(:zone, :name => "api_zone")
-    provider = FactoryBot.create(:ems_autosde, :zone => zone)
-
-    api_basic_authorize collection_action_identifier(:cloud_volumes, :create, :post)
-
-    post(api_cloud_volumes_url, :params => {:ems_id => provider.id, :name => 'foo', :size => 1234})
-
-    expected = {
-      'results' => a_collection_containing_exactly(
-        a_hash_including(
-          'success' => true,
-          'message' => a_string_including('Creating Cloud Volume')
-        )
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include(
+        "href" => api_cloud_volume_url(nil, cloud_volume),
+        "id"   => cloud_volume.id.to_s
       )
-    }
+    end
+  end
 
-    expect(response.parsed_body).to include(expected)
-    expect(response).to have_http_status(:ok)
+  describe "delete" do
+    it "rejects delete request without appropriate role" do
+      api_basic_authorize
+
+      post(api_cloud_volumes_url, :params => { :action => 'delete' })
+
+      expect(response).to have_http_status(:forbidden)
+    end
+
+    it "can delete a single cloud volume" do
+      zone = FactoryBot.create(:zone, :name => "api_zone")
+      aws = FactoryBot.create(:ems_amazon, :zone => zone)
+
+      cloud_volume1 = FactoryBot.create(:cloud_volume, :ext_management_system => aws, :name => "CloudVolume1")
+
+      api_basic_authorize action_identifier(:cloud_volumes, :delete, :resource_actions, :post)
+
+      post(api_cloud_volume_url(nil, cloud_volume1), :params => { :action => "delete" })
+
+      expect_single_action_result(:success => true, :task => true, :message => /Deleting Cloud Volume/)
+    end
+
+    it "can delete a cloud volume with DELETE as a resource action" do
+      zone = FactoryBot.create(:zone, :name => "api_zone")
+      aws = FactoryBot.create(:ems_amazon, :zone => zone)
+
+      cloud_volume1 = FactoryBot.create(:cloud_volume, :ext_management_system => aws, :name => "CloudVolume1")
+
+      api_basic_authorize action_identifier(:cloud_volumes, :delete, :resource_actions, :delete)
+
+      delete api_cloud_volume_url(nil, cloud_volume1)
+
+      expect(response).to have_http_status(:no_content)
+    end
+
+    it "rejects delete request with DELETE as a resource action without appropriate role" do
+      cloud_volume = FactoryBot.create(:cloud_volume)
+
+      api_basic_authorize
+
+      delete api_cloud_volume_url(nil, cloud_volume)
+
+      expect(response).to have_http_status(:forbidden)
+    end
+
+    it 'DELETE will raise an error if the cloud volume does not exist' do
+      api_basic_authorize action_identifier(:cloud_volumes, :delete, :resource_actions, :delete)
+
+      delete(api_cloud_volume_url(nil, 999_999))
+
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it 'can delete cloud volumes through POST' do
+      zone = FactoryBot.create(:zone, :name => "api_zone")
+      aws = FactoryBot.create(:ems_amazon, :zone => zone)
+
+      cloud_volume1 = FactoryBot.create(:cloud_volume, :ext_management_system => aws, :name => "CloudVolume1")
+      cloud_volume2 = FactoryBot.create(:cloud_volume, :ext_management_system => aws, :name => "CloudVolume2")
+
+      api_basic_authorize collection_action_identifier(:cloud_volumes, :delete, :post)
+
+      post(api_cloud_volumes_url, :params => { :action => 'delete', :resources => [{ 'id' => cloud_volume1.id }, { 'id' => cloud_volume2.id }] })
+      expect_multiple_action_result(2, :task => true, :message => /Deleting Cloud Volume/)
+    end
+  end
+
+  describe "create" do
+    it 'it can create cloud volumes through POST' do
+      zone = FactoryBot.create(:zone, :name => "api_zone")
+      provider = FactoryBot.create(:ems_autosde, :zone => zone)
+
+      api_basic_authorize collection_action_identifier(:cloud_volumes, :create, :post)
+
+      post(api_cloud_volumes_url, :params => {:ems_id => provider.id, :name => 'foo', :size => 1234})
+
+      expected = {
+        'results' => a_collection_containing_exactly(
+          a_hash_including(
+            'success' => true,
+            'message' => a_string_including('Creating Cloud Volume')
+          )
+        )
+      }
+
+      expect(response.parsed_body).to include(expected)
+      expect(response).to have_http_status(:ok)
+    end
   end
 
   describe "safe delete" do
