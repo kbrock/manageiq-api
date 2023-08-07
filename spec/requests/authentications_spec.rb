@@ -27,6 +27,28 @@ RSpec.describe 'Authentications API' do
 
       expect(response).to have_http_status(:forbidden)
     end
+
+    it 'limits authentications that a user can see' do
+      unauth_tenant = FactoryBot.create(:tenant)
+      unauth_group  = FactoryBot.create(:miq_group, :tenant => unauth_tenant)
+      unauth_user   = FactoryBot.create(:user, :miq_groups => [unauth_group])
+
+      auth  = FactoryBot.create(:authentication)
+      auth2 = FactoryBot.create(:authentication, :evm_owner => unauth_user, :miq_group => unauth_group)
+
+      api_basic_authorize collection_action_identifier(:authentications, :read, :get)
+
+      get(api_authentications_url)
+
+      expected = {
+        'count'     => 1,
+        'subcount'  => 1,
+        'name'      => 'authentications',
+        'resources' => [hash_including('href' => api_authentication_url(nil, auth))]
+      }
+      expect(response.parsed_body).to include(expected)
+      expect(response).to have_http_status(:ok)
+    end
   end
 
   describe 'GET /api/authentications/:id' do

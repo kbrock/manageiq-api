@@ -82,6 +82,17 @@ RSpec.describe 'Configuration Script Payloads API' do
       context "with an authentication reference in credentials" do
         let!(:authentication) { FactoryBot.create(:authentication, :ems_ref => "my-credential", :resource => manager) }
 
+        it "fails if the credential is owned by another tenant" do
+          unauth_tenant = FactoryBot.create(:tenant)
+          unauth_group  = FactoryBot.create(:miq_group, :tenant => unauth_tenant)
+          unauth_user   = FactoryBot.create(:user, :miq_groups => [unauth_group])
+
+          authentication.update!(:evm_owner => unauth_user, :miq_group => unauth_group)
+          api_basic_authorize(collection_action_identifier(:configuration_script_payloads, :edit, :post))
+          post(api_configuration_script_payloads_url, :params => {:action => 'edit', :resources => [{:id => script_payload.id, :name => 'foo', :credentials => {"my-cred" => {"credential_ref" => "my-credential", "credential_field" => "userid"}}}]})
+          expect(response).to have_http_status(:bad_request)
+        end
+
         it "adds the authentication to the configuration_script_payload.authentications" do
           api_basic_authorize collection_action_identifier(:configuration_script_payloads, :edit, :post)
 
