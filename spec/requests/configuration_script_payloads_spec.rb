@@ -83,9 +83,17 @@ RSpec.describe 'Configuration Script Payloads API' do
         let!(:authentication) { FactoryBot.create(:authentication, :ems_ref => "my-credential", :resource => manager) }
 
         it "fails if the credential is owned by another tenant" do
+          # want to use a non-root tenant. there are different rules around the root tenant
+          auth_tenant   = FactoryBot.create(:tenant)
+          # @role is used by api_basic_authorize when adding privileges
+          auth_group    = FactoryBot.create(:miq_group, :tenant => auth_tenant, :miq_user_role => @role)
           unauth_tenant = FactoryBot.create(:tenant)
           unauth_group  = FactoryBot.create(:miq_group, :tenant => unauth_tenant)
           unauth_user   = FactoryBot.create(:user, :miq_groups => [unauth_group])
+
+          # @user is the current api user
+          @user.miq_groups << auth_group
+          @user.update!(:current_group => auth_group)
 
           authentication.update!(:evm_owner => unauth_user, :miq_group => unauth_group)
           api_basic_authorize(collection_action_identifier(:configuration_script_payloads, :edit, :post))
