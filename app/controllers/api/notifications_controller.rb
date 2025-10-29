@@ -4,7 +4,7 @@ module Api
     def notifications_index_includes(scope)
       return scope unless @req.expand?(:resources)
 
-      scope.includes(:notification => {:notification_type => {}, :subject => [:miq_requests, :services]})
+      scope.preload(:notification => {:notification_type => {}, :subject => [:miq_requests, :services, :initiator]})
     end
 
     def notifications_search_conditions
